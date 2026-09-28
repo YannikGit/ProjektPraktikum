@@ -9,7 +9,7 @@ library(dplyr)
 library(parallel)
 library(marginaleffects)
 library(stringr)
-
+library(progressr)
 
 iter <- 100
 n_cores <- 20
@@ -18,7 +18,10 @@ rmse <- function(preds, obs) sqrt(mean((preds - obs)^2))
 losses     <- c("mse", "mae", "poisson", "gaussian", "nbinom")
 predictors <- c("Environment1", "Environment2", "Environment3")
 
-
+handlers(handler_progress(
+  format = "[:bar] :percent | Iteration :current/:total | Elapsed: :elapsed | ETA: :eta",
+  width  = 80
+))
 
 # -----------------------------------------------------------------------------------------------------------------------------------------------------------#
 run_one_iteration <- function(i) {
@@ -133,12 +136,12 @@ run_one_iteration <- function(i) {
       Predictor               = predictors,
       RMSE                    = accuracy_temp["RMSE"],
       RMSE_true               = accuracy_temp["RMSE_true"],
-      R2                      = r2_value,
+      R2                      = accuracy_temp["R2"],
       Spearman                = accuracy_temp["Spearman"],
       RMSE_train              = accuracy_train["RMSE"],
       RMSE_true_train         = accuracy_train["RMSE_true"],
       Spearman_train          = accuracy_train["Spearman"],
-      R2_train                = r2_train,
+      R2_train                = accuracy_train["R2"],
       Effect_size             = effects_temp,
       SE                      = SE_temp,
       p_value                 = p_value_temp,
@@ -295,4 +298,4 @@ overfit_check <- ggplot(metrics_long, aes(x = Loss_function, y = value, fill = s
   facet_wrap(~metric, scales = "free_y") +
   theme_minimal()
 
-ggsave("images/overfit_check.pdf", plot = overfit_check, device = "pdf", dpi =  600)
+ggsave("images/overfit_poisson.pdf", plot = overfit_check, device = "pdf", dpi =  600)
