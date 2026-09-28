@@ -8,13 +8,14 @@ library(ggplot2)
 library(dplyr)
 library(parallel)
 library(marginaleffects)
+library(stringr)
 
 
 iter <- 100
 n_cores <- 20
 rmse <- function(preds, obs) sqrt(mean((preds - obs)^2))
 
-losses     <- c("mse", "mae", "poisson", "gaussian")
+losses     <- c("mse", "mae", "poisson", "gaussian", "nbinom")
 predictors <- c("Environment1", "Environment2", "Environment3")
 
 
@@ -106,12 +107,8 @@ run_one_iteration <- function(i) {
       RMSE     = rmse(preds, test$observedResponse),
       RMSE_true = rmse(preds, test$true_mu),   # against the true, noise-free DGP mean
       Spearman = cor(preds, test$observedResponse, method = "spearman"),
-      R2       = 1 - sum((preds_train - train$observedResponse)^2) /
-        sum((train$observedResponse - mean(train$observedResponse))^2),
-      MCFadden = 1 - loglik_test_f / loglik_test_0
+      R2       = 1 - loglik_test_f / loglik_test_0
     )
-    r2_value <- if (losses[l] == "poisson") accuracy_temp["MCFadden"] else accuracy_temp["R2"]
-    
     # Accuracy metrics train
     loglik_f  <- sum(dpois(train$observedResponse, lambda = preds_train, log = TRUE), na.rm = TRUE)
     null_pred <- mean(train$observedResponse)
@@ -121,11 +118,9 @@ run_one_iteration <- function(i) {
       RMSE     = rmse(preds_train, train$observedResponse),
       RMSE_true = rmse(preds_train, train$true_mu),   # against the true, noise-free DGP mean
       Spearman = cor(preds_train, train$observedResponse, method = "spearman"),
-      R2       = 1 - sum((preds_train - train$observedResponse)^2) /sum((train$observedResponse - mean(train$observedResponse))^2),
-      MCFadden = 1 - loglik_f / loglik_0
+      R2       = loglik_f / loglik_0
     )
-    r2_train <- if (losses[l] == "poisson") accuracy_train["MCFadden"] else accuracy_train["R2"]
-    
+
     # Effects and summary metrics
     sm <- summary(dnn_fit, type = "response", n_permute = 1)    
     effects_temp <- sm$ACE[, 1] |> as.numeric()
@@ -168,56 +163,120 @@ metrics <- do.call(rbind, results_list[!failed])
 #------------------------------------------------------------------------------------------------------------------------------------------------------------#
 View(metrics)
 
-write.csv(metrics, file = "code/lossFunction_data.csv", row.names = FALSE)
+write.csv(metrics, file = "code/poisson_data.csv", row.names = FALSE)
 
-#Accuracy metrics
-Accuracy <- metrics |>
+glm_ref <- metrics |> filter(Loss_function == "GLM")
+dnn_metrics <- metrics |> filter(Loss_function != "GLM")
+
+
+####Accuracy metrics
+glm_accuracy_lines <- glm_ref |>
+  summarise(
+    RMSE     = mean(RMSE, na.rm = TRUE),
+    Spearman = mean(Spearman, na.rm = TRUE),
+    R2       = mean(R2, na.rm = TRUE)
+  ) |>
+  pivot_longer(everything(), names_to = "Accuracy", values_to = "glm_value")
+
+Accuracy <- dnn_metrics |>
   group_by(Loss_function) |>
-  summarise(RMSE = mean(RMSE, na.rm = TRUE),
-            RMSE_true = mean(RMSE_true, na.rm = TRUE),
+  summarise(RMSE     = mean(RMSE, na.rm = TRUE),
             Spearman = mean(Spearman, na.rm = TRUE),
-            R2 = mean(R2, na.rm = TRUE))
+            R2       = mean(R2, na.rm = TRUE))
 
-Accuracy_long <- tidyr::pivot_longer(
-  Accuracy,
-  cols = c(RMSE, Spearman, R2),
-  names_to = "Accuracy",
-  values_to = "Value"
-)
+Accuracy_long <- Accuracy |>
+  pivot_longer(cols = c(RMSE, Spearman, R2),
+               names_to = "Accuracy",
+               values_to = "Value")
+
+metric_xpos <- c(R2 = 1, RMSE = 2, Spearman = 3)
+bar_halfwidth <- 0.39  # adjust
+
+glm_accuracy_segments <- glm_accuracy_lines |>
+  mutate(
+    x    = metric_xpos[Accuracy] - bar_halfwidth,
+    xend = metric_xpos[Accuracy] + bar_halfwidth
+  )
 
 accuracy_plot <- ggplot(Accuracy_long, aes(x = Accuracy, y = Value, fill = Loss_function)) +
-  geom_col(position = position_dodge(width = 0.8), width = 0.7, color = "black", linewidth = 0.3) +
-  scale_fill_manual(values = c(MAE = "darkslateblue", MSE = "deepskyblue4", GAUSSIAN = "cyan3", POISSON = "cyan", GLM = "gray")) +
-  geom_text(aes(label = round(Value, 3)), position = position_dodge(width = 0.8), vjust = -0.3, size = 3.5) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7,
+           color = "black", linewidth = 0.3) +
+  geom_text(aes(label = round(Value, 3)),
+            position = position_dodge(width = 0.8),
+            vjust = -0.4, size = 2.8, color = "gray20") +
+  geom_segment(data = glm_accuracy_segments,
+               aes(x = x, xend = xend, y = glm_value, yend = glm_value),
+               color = "gray30", linewidth = 0.8, linetype = "solid",
+               inherit.aes = FALSE) +
+  geom_text(data = glm_accuracy_segments,
+            aes(x = xend, y = glm_value, label = paste("GLM:", round(glm_value, 3))),
+            hjust = -0.1, vjust = 0, size = 3, color = "gray30",
+            inherit.aes = FALSE) +
+  scale_fill_manual(values = c(MAE      = "#56B4E9",
+                               MSE      = "#0072B2",
+                               GAUSSIAN = "#009E73",
+                               POISSON  = "#6B969F",
+                               NBINOM   = "#8EBEC7")) +
   theme_minimal() +
-  labs(
-    title = "Model Accuracy",
-    x = "Accuracy metric",
-    y = "Value",
-    fill = "Loss function "
-  )
-ggsave("images/accuracy_plot_i100.pdf", plot = accuracy_plot, device = "pdf",  dpi = 600)
+  labs(title = "Model accuracy", x = "Accuracy metric", y = "Value", fill = "Loss function")
+ggsave("images/poisson_accuracy.pdf", plot = effects_plot, device = "pdf",  dpi = 600)
 
+####Effects:
 
-#Effects:
-Effects <- metrics |>
+glm_effects_lines <- glm_ref |>
+  group_by(Predictor) |>
+  summarise(glm_effect  = mean(Effect_size, na.rm = TRUE),
+            AME_true    = mean(AME_true, na.rm = TRUE))
+
+Effects <- dnn_metrics |>
   group_by(Loss_function, Predictor) |>
-  summarise(Effect = mean(Effect_size, na.rm = TRUE),
-            SE = mean(SE, na.rm = TRUE),
-            p_value = mean(p_value, na.rm = TRUE),
-            AME_true = mean(AME_true, na.rm = TRUE),
-            .groups = "drop")
+  summarise(Effect   = mean(Effect_size, na.rm = TRUE),
+            SE       = mean(SE, na.rm = TRUE),
+            .groups  = "drop")
 
+predictor_xpos <- c(Environment1 = 1, Environment2 = 2, Environment3 = 3)
+bar_halfwidth  <- 0.39
+
+glm_effects_segments <- glm_effects_lines |>
+  mutate(
+    x    = predictor_xpos[Predictor] - bar_halfwidth,
+    xend = predictor_xpos[Predictor] + bar_halfwidth
+  )
 
 effects_plot <- ggplot(Effects, aes(x = Predictor, y = Effect, fill = Loss_function)) +
-  geom_col(position = position_dodge(width = 0.8), width = 0.7, color = "black", linewidth = 0.3) +
-  geom_errorbar(aes(ymin = Effect - SE, ymax = Effect + SE),position = position_dodge(width = 0.8),width = 0.2) +
-  scale_fill_manual(values = c(MAE = "bisque", MSE = "chocolate", POISSON = "coral", GAUSSIAN = "orange", GLM = "gray")) +
-  geom_text(aes(label = round(Effect, 3)), position = position_dodge(width = 0.8), vjust = -0.3, size = 3) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7,
+           color = "black", linewidth = 0.3) +
+  geom_text(aes(label = round(Effect, 3)),
+            position = position_dodge(width = 0.8),
+            vjust = 1.5, size = 2.8, color = "gray20") +
+  geom_errorbar(aes(ymin = Effect - SE, ymax = Effect + SE),
+                position = position_dodge(width = 0.8), width = 0.2) +
+  # GLM reference segment
+  geom_segment(data = glm_effects_segments,
+               aes(x = x, xend = xend, y = glm_effect, yend = glm_effect),
+               color = "gray30", linewidth = 0.8, linetype = "solid",
+               inherit.aes = FALSE) +
+  geom_text(data = glm_effects_segments,
+            aes(x = xend, y = glm_effect, label = paste("GLM:", round(glm_effect, 3))),
+            hjust = -0.1, vjust = -0, size = 3, color = "gray30",
+            inherit.aes = FALSE) +
+  # True AME reference segment
+  geom_segment(data = glm_effects_segments,
+               aes(x = x, xend = xend, y = AME_true, yend = AME_true),
+               color = "firebrick", linewidth = 0.8, linetype = "solid",
+               inherit.aes = FALSE) +
+  geom_text(data = glm_effects_segments,
+            aes(x = xend, y = AME_true, label = paste("True:", round(AME_true, 3))),
+            hjust = -0.1, vjust = -2, size = 3, color = "firebrick",
+            inherit.aes = FALSE) +
+  scale_fill_manual(values = c(MAE      = "#E69F00",
+                               MSE      = "#D55E00",
+                               GAUSSIAN = "#F0E442",
+                               POISSON  = "#9B5A21",
+                               NBINOM   = "#EBC711")) +
   theme_minimal() +
-  labs(title = "Effect of Environment",x = "Predictor",y = "Effect size",fill = "Loss function")
-
-ggsave("images/effects_plot.pdf", plot = effects_plot, device = "pdf",  dpi = 600)
+  labs(title = "Effect of environment", x = "Predictor", y = "Effect size", fill = "Loss function")
+ggsave("images/poisson_effects.pdf", plot = effects_plot, device = "pdf",  dpi = 600)
 
 #Training Accuracy (did the models converge?)
 metrics_long <- metrics |>
