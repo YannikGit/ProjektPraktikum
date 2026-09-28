@@ -9,6 +9,7 @@ library(dplyr)
 library(parallel)
 library(marginaleffects)
 
+
 iter <- 100
 n_cores <- 20
 rmse <- function(preds, obs) sqrt(mean((preds - obs)^2))
@@ -167,7 +168,7 @@ metrics <- do.call(rbind, results_list[!failed])
 #------------------------------------------------------------------------------------------------------------------------------------------------------------#
 View(metrics)
 
-#write.csv(metrics, file = "lossFunction_data.csv", row.names = FALSE)
+write.csv(metrics, file = "code/lossFunction_data.csv", row.names = FALSE)
 
 #Accuracy metrics
 Accuracy <- metrics |>
@@ -195,7 +196,7 @@ accuracy_plot <- ggplot(Accuracy_long, aes(x = Accuracy, y = Value, fill = Loss_
     y = "Value",
     fill = "Loss function "
   )
-#ggsave("accuracy_plot.pdf", plot = accuracy_plot, device = "pdf",  dpi = 600)
+ggsave("images/accuracy_plot_i100.pdf", plot = accuracy_plot, device = "pdf",  dpi = 600)
 
 
 #Effects:
@@ -216,5 +217,23 @@ effects_plot <- ggplot(Effects, aes(x = Predictor, y = Effect, fill = Loss_funct
   theme_minimal() +
   labs(title = "Effect of Environment",x = "Predictor",y = "Effect size",fill = "Loss function")
 
-#ggsave("effects_plot.pdf", plot = effects_plot, device = "pdf",  dpi = 600)
+ggsave("images/effects_plot.pdf", plot = effects_plot, device = "pdf",  dpi = 600)
 
+#Training Accuracy (did the models converge?)
+metrics_long <- metrics |>
+  pivot_longer(
+    cols = c(RMSE, RMSE_train, Spearman, Spearman_train, R2, R2_train),
+    names_to = "metric_raw",
+    values_to = "value"
+  ) |>
+  mutate(
+    split = if_else(str_detect(metric_raw, "_train"), "train", "test"),
+    metric = str_remove(metric_raw, "_train")
+  )
+
+overfit_check <- ggplot(metrics_long, aes(x = Loss_function, y = value, fill = split)) +
+  geom_boxplot() +
+  facet_wrap(~metric, scales = "free_y") +
+  theme_minimal()
+
+ggsave("images/overfit_check.pdf", plot = overfit_check, device = "pdf", dpi =  600)
