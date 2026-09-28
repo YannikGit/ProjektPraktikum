@@ -35,8 +35,8 @@ rmse <- function(preds, obs) sqrt(mean((preds - obs)^2))
 # pmax() clamps non-positive predictions (MSE/MAE/GAUSSIAN losses can predict < 0). Before, dpois() returned NaN for t  hese and
 # na.rm = TRUE silently dropped them, which made the log-likelihood look BETTER than it was. eps is arbitrary -> see Neg_preds column.
 mcfadden <- function(obs, preds, null_pred, eps = 1e-8) {
-  ll_full <- sum(dpois(obs, lambda = pmax(preds, eps), log = TRUE))
-  ll_null <- sum(dpois(obs, lambda = null_pred,        log = TRUE))
+  ll_full <- sum(dbinom(obs, size = pmax(preds, eps), log = TRUE)) #flag
+  ll_null <- sum(dbinom(obs, size = null_pred,        log = TRUE)) #flag
   1 - ll_full / ll_null
 }
 
@@ -55,9 +55,9 @@ run_one_iteration <- function(i) {
                     intercept    = -1,
                     fixedEffects = c(2, 0.4, 0.1),
                     overdispersion       = 0,
-                    family               = poisson(),
+                    family               = gaussian(),
                     randomEffectVariance = 0)
-  sim$true_mu <- exp(-1 + 2 * sim$Environment1 + 0.4 * sim$Environment2 + 0.1 * sim$Environment3)
+  sim$true_mu <- -1 + 2 * sim$Environment1 + 0.4 * sim$Environment2 + 0.1 * sim$Environment3
   true_effects <- c(Environment1 = 2, Environment2 = 0.4, Environment3 = 0.1)
   trainID <- sample(x = sim$ID, size = 0.8 * length(sim$ID))
   train <- sim[trainID, ]
@@ -83,7 +83,7 @@ run_one_iteration <- function(i) {
   for (b in seq_len(n_boot)) {
     boot_data <- train_clean[sample(nrow(train_clean), replace = TRUE), ]
     glm_b <- glm(formula = observedResponse ~ Environment1 + Environment2 + Environment3,
-                 data = boot_data, family = poisson)
+                 data = boot_data, family = gaussian) #flag
     boot_preds_test[, b]  <- predict(glm_b, newdata = test,  type = "response")
     boot_preds_train[, b] <- predict(glm_b, newdata = train, type = "response")
     ame_b <- avg_slopes(glm_b, newdata = train_clean, variables = predictors, vcov = FALSE)
@@ -101,13 +101,13 @@ run_one_iteration <- function(i) {
     RMSE     = rmse(preds_glm, test$observedResponse),
     RMSE_true = rmse(preds_glm, test$true_mu),
     Spearman = cor(preds_glm, test$observedResponse, method = "spearman"),
-    R2       = mcfadden(test$observedResponse, preds_glm, null_pred)
+    R2       = 1 - sum((preds_train - train$observedResponse)^2) /sum((train$observedResponse - mean(train$observedResponse))^2) #flag
   )
   accuracy_glm_train <- c(
     RMSE      = rmse(preds_glm_train, train$observedResponse),
     RMSE_true = rmse(preds_glm_train, train$true_mu),
     Spearman  = cor(preds_glm_train, train$observedResponse, method = "spearman"),
-    R2        = mcfadden(train$observedResponse, preds_glm_train, null_pred)
+    R2        = 1 - sum((preds_train - train$observedResponse)^2) /sum((train$observedResponse - mean(train$observedResponse))^2) #flag
   )
   
   glm_row <- data.frame(
@@ -160,14 +160,14 @@ run_one_iteration <- function(i) {
       RMSE     = rmse(preds, test$observedResponse),
       RMSE_true = rmse(preds, test$true_mu),   # against the true, noise-free DGP mean
       Spearman = cor(preds, test$observedResponse, method = "spearman"),
-      R2       = mcfadden(test$observedResponse, preds, null_pred)          # [CLAUDE FIX 3]
+      R2       = 1 - sum((preds_train - train$observedResponse)^2) /sum((train$observedResponse - mean(train$observedResponse))^2) #flag         # [CLAUDE FIX 3]
     )
     # Accuracy metrics train
     accuracy_train <- c(
       RMSE     = rmse(preds_train, train$observedResponse),
       RMSE_true = rmse(preds_train, train$true_mu),   # against the true, noise-free DGP mean
       Spearman = cor(preds_train, train$observedResponse, method = "spearman"),
-      R2       = mcfadden(train$observedResponse, preds_train, null_pred)   # [CLAUDE FIX 7] was loglik_f / loglik_0 (missing "1 -")
+      R2       = 1 - sum((preds_train - train$observedResponse)^2) /sum((train$observedResponse - mean(train$observedResponse))^2) #flag   # [CLAUDE FIX 7] was loglik_f / loglik_0 (missing "1 -")
     )
     
     # Effects and summary metrics
@@ -216,7 +216,7 @@ metrics <- do.call(rbind, results_list[!failed])
 #------------------------------------------------------------------------------------------------------------------------------------------------------------#
 if (interactive()) View(metrics)   # [CLAUDE FIX 10] View() errors when the script runs non-interactively (e.g. Rscript)
 
-write.csv(metrics, file = "poisson_data.csv", row.names = FALSE)
+write.csv(metrics, file = "code/gaussian_data.csv", row.names = FALSE)
 
 glm_ref <- metrics |> filter(Loss_function == "GLM")
 dnn_metrics <- metrics |> filter(Loss_function != "GLM")
@@ -240,7 +240,7 @@ coverage_table <- metrics |>
             .groups       = "drop")
 
 if (interactive()) View(coverage_table)
-write.csv(coverage_table, file = "code/poisson_coverage.csv", row.names = FALSE)
+write.csv(coverage_table, file = "code/gaussian_coverage.csv", row.names = FALSE)
 
 
 ####Accuracy metrics
@@ -284,8 +284,8 @@ accuracy_plot <- ggplot(Accuracy_long, aes(x = Accuracy, y = Value, fill = Loss_
                color = "gray30", linewidth = 0.8, linetype = "solid",
                inherit.aes = FALSE) +
   geom_text(data = glm_accuracy_segments,
-            aes(x = x, y = glm_value * 1.08, label = paste("GLM:", round(glm_value, 3))),
-            hjust = 0, vjust = 0, size = 3, color = "gray30",
+            aes(x = xend, y = glm_value, label = paste("GLM:", round(glm_value, 3))),
+            hjust = -0.1, vjust = 0, size = 3, color = "gray30",
             inherit.aes = FALSE) +
   scale_fill_manual(values = c(MAE      = "#56B4E9",
                                MSE      = "#0072B2",
@@ -295,7 +295,7 @@ accuracy_plot <- ggplot(Accuracy_long, aes(x = Accuracy, y = Value, fill = Loss_
   theme_minimal() +
   labs(title = "Model accuracy", x = "Accuracy metric", y = "Value", fill = "Loss function")
 # [CLAUDE FIX 12] plot = accuracy_plot (was effects_plot)   [CLAUDE FIX 13] fixed width/height
-ggsave("images/poisson_accuracy.pdf", plot = accuracy_plot, device = "pdf", width = 9, height = 5)
+ggsave("images/gaussian_accuracy.pdf", plot = accuracy_plot, device = "pdf", width = 9, height = 5)
 
 ####Effects:
 
@@ -352,7 +352,7 @@ effects_plot <- ggplot(Effects, aes(x = Predictor, y = Effect, fill = Loss_funct
                                NBINOM   = "#EBC711")) +
   theme_minimal() +
   labs(title = "Effect of environment", x = "Predictor", y = "Effect size", fill = "Loss function")
-ggsave("images/poisson_effects.pdf", plot = effects_plot, device = "pdf", width = 9, height = 5)   # [CLAUDE FIX 13]
+ggsave("images/gaussian_effects.pdf", plot = effects_plot, device = "pdf", width = 9, height = 5)   # [CLAUDE FIX 13]
 
 #Training Accuracy (did the models converge?) -> appendix
 metrics_long <- metrics |>
@@ -372,4 +372,4 @@ overfit_check <- ggplot(metrics_long, aes(x = Loss_function, y = value, fill = s
   facet_wrap(~metric, scales = "free_y") +
   theme_minimal()
 
-ggsave("images/poisson_overfit.pdf", plot = overfit_check, device = "pdf", width = 9, height = 5)   # [CLAUDE FIX 13]
+ggsave("images/overfit_gaussian.pdf", plot = overfit_check, device = "pdf", width = 9, height = 5)   # [CLAUDE FIX 13]
