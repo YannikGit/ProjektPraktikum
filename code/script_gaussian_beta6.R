@@ -23,7 +23,7 @@ library(pbmcapply)   # [CLAUDE FIX 1] replaces progressr (progressr does not rel
 RNGkind("L'Ecuyer-CMRG")
 set.seed(42)
 
-iter    <- 2
+iter    <- 100
 n_cores <- 20
 n_boot  <- 20   # [CLAUDE FIX 17] one bootstrap count for GLM AND DNN, so both always use the same number
 # [CLAUDE NOTE] 20 bootstrap replicates give a fairly noisy SE per fit (roughly +-16% relative error of the SE itself).
@@ -52,12 +52,12 @@ run_one_iteration <- function(i) {
   # [CLAUDE FIX 15] sampleSize 200 -> 250: after the 80/20 train-test split (200 train) and validation = 0.2 inside the DNN,
   # the DNN still fits on 160 rows, same as before validation was switched on.
   sim <- createData(sampleSize    = 250,
-                    intercept    = 4,
+                    intercept    = 6,
                     fixedEffects = c(2, 0.4, 0.1),
                     overdispersion       = 0,
                     family               = gaussian(),
                     randomEffectVariance = 0)
-  sim$true_mu <- 4 + 2 * sim$Environment1 + 0.4 * sim$Environment2 + 0.1 * sim$Environment3
+  sim$true_mu <- 6 + 2 * sim$Environment1 + 0.4 * sim$Environment2 + 0.1 * sim$Environment3
   true_effects <- c(Environment1 = 2, Environment2 = 0.4, Environment3 = 0.1)
   trainID <- sample(x = sim$ID, size = 0.8 * length(sim$ID))
   train <- sim[trainID, ]
@@ -231,7 +231,7 @@ metrics <- do.call(rbind, results_list[!failed])
 #------------------------------------------------------------------------------------------------------------------------------------------------------------#
 if (interactive()) View(metrics)   # [CLAUDE FIX 10] View() errors when the script runs non-interactively (e.g. Rscript)
 
-write.csv(metrics, file = "code/gaussian_data_beta4.csv", row.names = FALSE)
+write.csv(metrics, file = "code/gaussian_data_beta6.csv", row.names = FALSE)
 
 glm_ref <- metrics |> filter(Loss_function == "GLM")
 dnn_metrics <- metrics |> filter(Loss_function != "GLM")
@@ -255,7 +255,7 @@ coverage_table <- metrics |>
             .groups       = "drop")
 
 if (interactive()) View(coverage_table)
-write.csv(coverage_table, file = "code/gaussian_coverage_beta4.csv", row.names = FALSE)
+write.csv(coverage_table, file = "code/gaussian_coverage_beta6.csv", row.names = FALSE)
 
 
 ####Accuracy metrics
@@ -308,9 +308,9 @@ accuracy_plot <- ggplot(Accuracy_long, aes(x = Accuracy, y = Value, fill = Loss_
                                POISSON  = "#6B969F",
                                NBINOM   = "#8EBEC7")) +
   theme_minimal() +
-  labs(title = "Model accuracy", x = "Accuracy metric", y = "Value", fill = "Loss function")
+  labs(title = "Model accuracy, intercept 6", x = "Accuracy metric", y = "Value", fill = "Loss function")
 # [CLAUDE FIX 12] plot = accuracy_plot (was effects_plot)   [CLAUDE FIX 13] fixed width/height
-ggsave("images/gaussian_accuracy_beta4.pdf", plot = accuracy_plot, device = "pdf", width = 9, height = 5)
+ggsave("images/gaussian_accuracy_beta6.pdf", plot = accuracy_plot, device = "pdf", width = 9, height = 5)
 
 ####Effects:
 
@@ -366,8 +366,8 @@ effects_plot <- ggplot(Effects, aes(x = Predictor, y = Effect, fill = Loss_funct
                                POISSON  = "#9B5A21",
                                NBINOM   = "#EBC711")) +
   theme_minimal() +
-  labs(title = "Effect of environment", x = "Predictor", y = "Effect size", fill = "Loss function")
-ggsave("images/gaussian_effects_beta4.pdf", plot = effects_plot, device = "pdf", width = 9, height = 5)   # [CLAUDE FIX 13]
+  labs(title = "Effect of environment, intercept 6", x = "Predictor", y = "Effect size", fill = "Loss function")
+ggsave("images/gaussian_effects_beta6.pdf", plot = effects_plot, device = "pdf", width = 9, height = 5)   # [CLAUDE FIX 13]
 
 #Training Accuracy (did the models converge?) -> appendix
 metrics_long <- metrics |>
@@ -387,7 +387,7 @@ overfit_check <- ggplot(metrics_long, aes(x = Loss_function, y = value, fill = s
   facet_wrap(~metric, scales = "free_y") +
   theme_minimal()
 
-ggsave("images/overfit_gaussian_beta4.pdf", plot = overfit_check, device = "pdf", width = 9, height = 5)   # [CLAUDE FIX 13]
+ggsave("images/overfit_gaussian_beta6.pdf", plot = overfit_check, device = "pdf", width = 9, height = 5)   # [CLAUDE FIX 13]
 
 #gaussian specifically: Check how many times gaussian and nbinom failed!
 metrics |>
