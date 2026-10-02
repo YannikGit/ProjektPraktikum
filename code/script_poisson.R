@@ -23,8 +23,8 @@ library(pbmcapply)   # [CLAUDE FIX 1] replaces progressr (progressr does not rel
 RNGkind("L'Ecuyer-CMRG")
 set.seed(42)
 
-iter    <- 1000
-n_cores <- 20
+iter    <- 2
+n_cores <- 2
 n_boot  <- 20   # [CLAUDE FIX 17] one bootstrap count for GLM AND DNN, so both always use the same number
 # [CLAUDE NOTE] 20 bootstrap replicates give a fairly noisy SE per fit (roughly +-16% relative error of the SE itself).
 # Fine for a 6-week project, but if compute allows, 50 would stabilise coverage estimates.
@@ -211,7 +211,7 @@ if (any(failed)) {
   warning(sprintf("%d of %d iterations failed - inspect results_list[failed] for error messages",
                   sum(failed), iter))
 }
-
+ 
 metrics <- do.call(rbind, results_list[!failed])
 #------------------------------------------------------------------------------------------------------------------------------------------------------------#
 if (interactive()) View(metrics)   # [CLAUDE FIX 10] View() errors when the script runs non-interactively (e.g. Rscript)

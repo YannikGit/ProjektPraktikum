@@ -232,6 +232,7 @@ metrics <- do.call(rbind, results_list[!failed])
 if (interactive()) View(metrics)   # [CLAUDE FIX 10] View() errors when the script runs non-interactively (e.g. Rscript)
 
 write.csv(metrics, file = "code/gaussian_data.csv", row.names = FALSE)
+#metrics <- read.csv(file = "code/gaussian_data.csv")
 
 glm_ref <- metrics |> filter(Loss_function == "GLM")
 dnn_metrics <- metrics |> filter(Loss_function != "GLM")
@@ -298,6 +299,8 @@ accuracy_plot <- ggplot(Accuracy_long, aes(x = Accuracy, y = Value, fill = Loss_
   theme_minimal() +
   labs(title = "Model accuracy", x = "Accuracy metric", y = "Value", fill = "Loss function")
 ggsave("images/gaussian_accuracy.pdf", plot = accuracy_plot, device = "pdf", width = 9, height = 5)
+ggsave("images/gaussian_accuracy.png", plot = accuracy_plot, device = "png",
+       width = 9, height = 5, dpi = 600, bg = "white")
 
 #### Effects metrics
 Effects <- metrics |>
@@ -330,6 +333,8 @@ effects_plot <- ggplot(Effects, aes(x = Predictor, y = Effect, fill = Loss_funct
   theme_minimal() +
   labs(title = "Effect of environment", x = "Predictor", y = "Effect size", fill = "Loss function")
 ggsave("images/gaussian_effects.pdf", plot = effects_plot, device = "pdf", width = 9, height = 5)
+ggsave("images/gaussian_effects.pdf", plot = effects_plot, device = "png",
+       width = 9, height = 5, dpi = 600, bg = "white")
 
 #Training Accuracy (did the models converge?) -> appendix
 metrics_long <- metrics |>
@@ -350,6 +355,8 @@ overfit_check <- ggplot(metrics_long, aes(x = Loss_function, y = value, fill = s
   theme_minimal()
 
 ggsave("images/overfit_gaussian.pdf", plot = overfit_check, device = "pdf", width = 9, height = 5)   # [CLAUDE FIX 13]
+ggsave("images/overfit_gaussian.png", plot = overfit_check, device = "png",
+       width = 9, height = 5, dpi = 600, bg = "white")
 
 #gaussian specifically: Check how many times gaussian and nbinom failed!
 metrics |>
