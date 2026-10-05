@@ -299,8 +299,7 @@ accuracy_plot <- ggplot(Accuracy_long, aes(x = Accuracy, y = Value, fill = Loss_
   theme_minimal() +
   labs(title = "Model accuracy", x = "Accuracy metric", y = "Value", fill = "Loss function")
 ggsave("images/gaussian_accuracy.pdf", plot = accuracy_plot, device = "pdf", width = 9, height = 5)
-ggsave("images/gaussian_accuracy.png", plot = accuracy_plot, device = "png",
-       width = 9, height = 5, dpi = 600, bg = "white")
+ggsave("images/gaussian_accuracy.png", plot = accuracy_plot, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
 
 #### Effects metrics
 Effects <- metrics |>

@@ -23,8 +23,8 @@ library(pbmcapply)   # [CLAUDE FIX 1] replaces progressr (progressr does not rel
 RNGkind("L'Ecuyer-CMRG")
 set.seed(42)
 
-iter    <- 2
-n_cores <- 2
+iter    <- 20
+n_cores <- 20
 n_boot  <- 20   # [CLAUDE FIX 17] one bootstrap count for GLM AND DNN, so both always use the same number
 # [CLAUDE NOTE] 20 bootstrap replicates give a fairly noisy SE per fit (roughly +-16% relative error of the SE itself).
 # Fine for a 6-week project, but if compute allows, 50 would stabilise coverage estimates.
@@ -283,6 +283,7 @@ accuracy_plot <- ggplot(Accuracy_long, aes(x = Accuracy, y = Value, fill = Loss_
   theme_minimal() +
   labs(title = "Model accuracy", x = "Accuracy metric", y = "Value", fill = "Loss function")
 ggsave("images/poisson_accuracy.pdf", plot = accuracy_plot, device = "pdf", width = 9, height = 5)
+ggsave("images/poisson_accuracy.png", plot = accuracy_plot, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
 
 #### Effects metrics
 Effects <- metrics |>
@@ -315,6 +316,7 @@ effects_plot <- ggplot(Effects, aes(x = Predictor, y = Effect, fill = Loss_funct
   theme_minimal() +
   labs(title = "Effect of environment", x = "Predictor", y = "Effect size", fill = "Loss function")
 ggsave("images/poisson_effects.pdf", plot = effects_plot, device = "pdf", width = 9, height = 5)
+ggsave("images/poisson_efffects.png", plot = accuracy_plot, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
 
 #Training Accuracy (did the models converge?) -> appendix
 metrics_long <- metrics |>
@@ -334,4 +336,5 @@ overfit_check <- ggplot(metrics_long, aes(x = Loss_function, y = value, fill = s
   facet_wrap(~metric, scales = "free_y") +
   theme_minimal()
 
-ggsave("images/poisson_overfit.pdf", plot = overfit_check, device = "pdf", width = 9, height = 5)   # [CLAUDE FIX 13]
+ggsave("images/poisson_overfit.pdf", plot = overfit_check, device = "pdf", width = 9, height = 5)
+ggsave("images/poisson_overfit.png", plot = accuracy_plot, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
