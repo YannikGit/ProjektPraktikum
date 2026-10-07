@@ -338,3 +338,4 @@ overfit_check <- ggplot(metrics_long, aes(x = Loss_function, y = value, fill = s
 
 ggsave("images/poisson_overfit.pdf", plot = overfit_check, device = "pdf", width = 9, height = 5)
 ggsave("images/poisson_overfit.png", plot = overfit_check, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
+
