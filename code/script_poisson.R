@@ -23,8 +23,8 @@ library(pbmcapply)   # [CLAUDE FIX 1] replaces progressr (progressr does not rel
 RNGkind("L'Ecuyer-CMRG")
 set.seed(42)
 
-iter    <- 20
-n_cores <- 20
+iter    <- 1000
+n_cores <- 12
 n_boot  <- 20   # [CLAUDE FIX 17] one bootstrap count for GLM AND DNN, so both always use the same number
 # [CLAUDE NOTE] 20 bootstrap replicates give a fairly noisy SE per fit (roughly +-16% relative error of the SE itself).
 # Fine for a 6-week project, but if compute allows, 50 would stabilise coverage estimates.
@@ -316,7 +316,7 @@ effects_plot <- ggplot(Effects, aes(x = Predictor, y = Effect, fill = Loss_funct
   theme_minimal() +
   labs(title = "Effect of environment", x = "Predictor", y = "Effect size", fill = "Loss function")
 ggsave("images/poisson_effects.pdf", plot = effects_plot, device = "pdf", width = 9, height = 5)
-ggsave("images/poisson_efffects.png", plot = accuracy_plot, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
+ggsave("images/poisson_efffects.png", plot = effects_plot, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
 
 #Training Accuracy (did the models converge?) -> appendix
 metrics_long <- metrics |>
@@ -337,4 +337,4 @@ overfit_check <- ggplot(metrics_long, aes(x = Loss_function, y = value, fill = s
   theme_minimal()
 
 ggsave("images/poisson_overfit.pdf", plot = overfit_check, device = "pdf", width = 9, height = 5)
-ggsave("images/poisson_overfit.png", plot = accuracy_plot, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
+ggsave("images/poisson_overfit.png", plot = overfit_check, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
