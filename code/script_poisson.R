@@ -10,6 +10,8 @@ library(parallel)
 library(marginaleffects)
 library(stringr)
 library(pbmcapply)   
+library(gridExtra)
+library(grid)
 
 RNGkind("L'Ecuyer-CMRG")
 set.seed(42)
@@ -214,8 +216,17 @@ coverage_table <- metrics |>
 if (interactive()) View(coverage_table)
 write.csv(coverage_table, file = "code/poisson_coverage.csv", row.names = FALSE)
 
-png("images/poisson_coverage.png", width = 900, height = 300, res = 150)
-grid.table(coverage_table, rows = NULL)
+cov_fmt <- coverage_table |>
+  mutate(
+    Loss_function = factor(Loss_function, levels = loss_levels),
+    Coverage = sprintf("%.3f (%.3f)", coverage, coverage_MCSE),
+    Bias     = sprintf("%+.3f (%.3f)", bias, bias_MCSE)
+  ) |>
+  arrange(Predictor, Loss_function) |>
+  select(`Loss function` = Loss_function, Predictor, Coverage, Bias)
+
+png("images/poisson_coverage_table.png", width = 1000, height = 900, res = 150)
+grid.table(cov_fmt, rows = NULL)
 dev.off()
 
 ####Accuracy metrics.

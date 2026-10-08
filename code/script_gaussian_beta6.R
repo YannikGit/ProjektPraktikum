@@ -200,8 +200,18 @@ if (any(failed)) {
 metrics <- do.call(rbind, results_list[!failed])
 #------------------------------------------------------------------------------------------------------------------------------------------------------------#
 if (interactive()) View(metrics)
-
 write.csv(metrics, file = "code/gaussian_data_beta6.csv", row.names = FALSE)
+
+glm_ref <- metrics |> filter(Loss_function == "GLM")
+dnn_metrics <- metrics |> filter(Loss_function != "GLM")
+loss_colors <- c(
+  MSE      = "#440154",
+  MAE      = "#3B528B",
+  POISSON  = "#21908C",
+  GAUSSIAN = "#5DC863",
+  NBINOM   = "#C8C544", 
+  GLM      = "grey60"     # reference model
+)
 
 coverage_table <- metrics |>
   mutate(error   = Effect_size - AME_true,
@@ -216,7 +226,18 @@ coverage_table <- metrics |>
 
 if (interactive()) View(coverage_table)
 write.csv(coverage_table, file = "code/gaussian_coverage_beta6.csv", row.names = FALSE)
+cov_fmt <- coverage_table |>
+  mutate(
+    Loss_function = factor(Loss_function, levels = loss_levels),
+    Coverage = sprintf("%.3f (%.3f)", coverage, coverage_MCSE),
+    Bias     = sprintf("%+.3f (%.3f)", bias, bias_MCSE)
+  ) |>
+  arrange(Predictor, Loss_function) |>
+  select(`Loss function` = Loss_function, Predictor, Coverage, Bias)
 
+png("images/gaussian_coverage_table.png", width = 1000, height = 900, res = 150)
+grid.table(cov_fmt, rows = NULL)
+dev.off()
 
 ####Accuracy metrics
 loss_levels <- c("MSE", "MAE", "POISSON", "GAUSSIAN", "NBINOM", "GLM")   
@@ -244,14 +265,9 @@ accuracy_plot <- ggplot(Accuracy_long, aes(x = Accuracy, y = Value, fill = Loss_
   geom_text(aes(label = round(Value, 3)),
             position = position_dodge(width = dodge_w),
             vjust = -0.4, size = 2.8, color = "gray20") +
-  scale_fill_manual(values = c(MAE      = "#56B4E9",
-                               MSE      = "#0072B2",
-                               GAUSSIAN = "#009E73",
-                               POISSON  = "#6B969F",
-                               NBINOM   = "#8EBEC7",
-                               GLM      = "grey60")) +
+  scale_fill_manual(values = loss_colors) +
   theme_minimal() +
-  labs(title = "Model accuracy, intercept 6", x = "Accuracy metric", y = "Value", fill = "Loss function")
+  labs(title = "Model accuracy", x = "Accuracy metric", y = "Value", fill = "Loss function")
 ggsave("images/gaussian_accuracy_beta6.pdf", plot = accuracy_plot, device = "pdf", width = 9, height = 5)
 ggsave("images/gaussian_accuracy_beta6.png", plot = accuracy_plot, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
 
@@ -279,17 +295,12 @@ effects_plot <- ggplot(Effects, aes(x = Predictor, y = Effect, fill = Loss_funct
             position = position_dodge(width = dodge_w),
             vjust = 1.5, size = 2.8, color = "gray20") +
   geom_text(data = ame_labels,
-            aes(x = x, y = AME_true, label = paste("True:", round(AME_true, 3))),
+            aes(x = x, y = AME_true, label = paste("True:", round(AME_true, 4))),
             hjust = 0, vjust = -0.6, size = 3, color = "firebrick",
             inherit.aes = FALSE) +
-  scale_fill_manual(values = c(MAE      = "#E69F00",
-                               MSE      = "#D55E00",
-                               GAUSSIAN = "#F0E442",
-                               POISSON  = "#9B5A21",
-                               NBINOM   = "#EBC711",
-                               GLM      = "grey60")) +
+  scale_fill_manual(values = loss_colors) +
   theme_minimal() +
-  labs(title = "Effect of environment, intercept 6", x = "Predictor", y = "Effect size", fill = "Loss function")
+  labs(title = "Effect of environment", x = "Predictor", y = "Effect size", fill = "Loss function")
 ggsave("images/gaussian_effects_beta6.pdf", plot = effects_plot, device = "pdf", width = 9, height = 5)
 ggsave("images/gaussian_effects_beta6.png", plot = accuracy_plot, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
 

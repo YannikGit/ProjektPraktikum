@@ -91,6 +91,6 @@ cov_fmt <- coverage_table |>
   arrange(Predictor, Loss_function) |>
   select(`Loss function` = Loss_function, Predictor, Coverage, Bias)
 
-png("images/poisson_coverage_table.png", width = 1100, height = 900, res = 150)
+png("images/poisson_coverage_table.png", width = 1000, height = 900, res = 150)
 grid.table(cov_fmt, rows = NULL)
 dev.off()
