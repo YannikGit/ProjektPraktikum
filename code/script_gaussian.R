@@ -1,10 +1,3 @@
-###############################################################################
-# Legend for review comments:
-#   [CLAUDE FIX n]  = changed by Claude, see chat for reasoning
-#   [CLAUDE NOTE]   = NOT changed, but worth a decision from you
-#   FIX 1-14  = first review round
-#   FIX 15-18 = second round (validation, sample size, bootstrapped GLM, coverage table)
-###############################################################################
 
 library(DHARMa)
 library(cito)
@@ -17,23 +10,16 @@ library(dplyr)
 library(parallel)
 library(marginaleffects)
 library(stringr)
-library(pbmcapply)   # [CLAUDE FIX 1] replaces progressr (progressr does not relay progress from mclapply forks). install.packages("pbmcapply")
+library(pbmcapply)
 
-# [CLAUDE FIX 2] reproducibility: parallel-safe RNG + seed (mc.set.seed = TRUE needs L'Ecuyer to give reproducible streams)
 RNGkind("L'Ecuyer-CMRG")
 set.seed(42)
 
 iter    <- 1000
 n_cores <- 20
-n_boot  <- 20   # [CLAUDE FIX 17] one bootstrap count for GLM AND DNN, so both always use the same number
-# [CLAUDE NOTE] 20 bootstrap replicates give a fairly noisy SE per fit (roughly +-16% relative error of the SE itself).
-# Fine for a 6-week project, but if compute allows, 50 would stabilise coverage estimates.
+n_boot  <- 20 
 
 rmse <- function(preds, obs) sqrt(mean((preds - obs)^2))
-
-# [CLAUDE FIX 3] one McFadden helper used everywhere (GLM + DNN, train + test), so every model is measured with the same ruler.
-# pmax() clamps non-positive predictions (MSE/MAE/GAUSSIAN losses can predict < 0). Before, dpois() returned NaN for t  hese and
-# na.rm = TRUE silently dropped them, which made the log-likelihood look BETTER than it was. eps is arbitrary -> see Neg_preds column.
 mcfadden <- function(obs, preds, null_pred, eps = 1e-8) {
   ll_full <- sum(dbinom(obs, size = pmax(preds, eps), log = TRUE)) #flag
   ll_null <- sum(dbinom(obs, size = null_pred,        log = TRUE)) #flag
@@ -46,11 +32,9 @@ predictors <- c("Environment1", "Environment2", "Environment3")
 # -----------------------------------------------------------------------------------------------------------------------------------------------------------#
 run_one_iteration <- function(i) {
   
-  torch_manual_seed(i)   # [CLAUDE FIX 2b] torch has its own RNG (weight init), R's set.seed does not reach it
-  
-  #### Data Creation
-  # [CLAUDE FIX 15] sampleSize 200 -> 250: after the 80/20 train-test split (200 train) and validation = 0.2 inside the DNN,
-  # the DNN still fits on 160 rows, same as before validation was switched on.
+  cat(sprintf("%s  iter %d\n", format(Sys.time(), "%H:%M:%S"), i),
+      file = "logs/progress.txt", append = TRUE)  
+  torch_manual_seed(i)   
   sim <- createData(sampleSize    = 250,
                     intercept    = -1,
                     fixedEffects = c(2, 0.4, 0.1),
@@ -63,19 +47,10 @@ run_one_iteration <- function(i) {
   train <- sim[trainID, ]
   test  <- sim[-trainID, ]
   ame_reference <- data.frame(Predictor = names(true_effects), AME_true = true_effects)
-  train_clean <- train[, setdiff(names(train), "group")] #Somehow needed for avg_slopes AME calculation, as sim includes group
-  null_pred <- mean(train$observedResponse)   # [CLAUDE FIX 3] shared null model for all McFadden calculations
-  
+  train_clean <- train[, setdiff(names(train), "group")]
+  null_pred <- mean(train$observedResponse) 
   
   #### GLM
-  # [CLAUDE FIX 16] bootstrapped GLM, mirroring what cito does with bootstrap = n_boot:
-  #   - each replicate refits the GLM on a resample (rows drawn WITH replacement) of the training data
-  #   - predictions = mean over replicates (bagged, like the DNN ensemble)
-  #   - effect      = mean of the replicate AMEs, SE = SD of the replicate AMEs, p from a z-test (estimate / SE)
-  # AMEs are always evaluated on the ORIGINAL training data, because that is where AME_true is defined.
-  # vcov = FALSE skips the (unused) delta-method SEs in avg_slopes -> faster.
-  # [CLAUDE NOTE] mean/SD/z-test is, to my knowledge, how cito's summary() reports bootstrap ACEs. If you want to be 100% sure
-  # both sides are identical, check the cito source/docs for summary.citodnnBootstrap.
   boot_preds_test  <- matrix(NA_real_, nrow = nrow(test),  ncol = n_boot)
   boot_preds_train <- matrix(NA_real_, nrow = nrow(train), ncol = n_boot)
   boot_ame         <- matrix(NA_real_, nrow = n_boot, ncol = length(predictors), dimnames = list(NULL, predictors))
@@ -87,7 +62,7 @@ run_one_iteration <- function(i) {
     boot_preds_test[, b]  <- predict(glm_b, newdata = test,  type = "response")
     boot_preds_train[, b] <- predict(glm_b, newdata = train, type = "response")
     ame_b <- avg_slopes(glm_b, newdata = train_clean, variables = predictors, vcov = FALSE)
-    boot_ame[b, ] <- ame_b$estimate[match(predictors, ame_b$term)]   # match() guarantees correct predictor order
+    boot_ame[b, ] <- ame_b$estimate[match(predictors, ame_b$term)]
   }
   
   preds_glm       <- rowMeans(boot_preds_test)
@@ -96,7 +71,6 @@ run_one_iteration <- function(i) {
   glm_SE          <- apply(boot_ame, 2, sd)
   glm_p           <- 2 * pnorm(-abs(glm_effect / glm_SE))
   
-  # [CLAUDE FIX 4] GLM test R2 is now out-of-sample McFadden, exactly like the DNNs (was in-sample before, and R2_train was a copy)
   accuracy_glm <- c(
     RMSE     = rmse(preds_glm, test$observedResponse),
     RMSE_true = rmse(preds_glm, test$true_mu),
@@ -120,17 +94,16 @@ run_one_iteration <- function(i) {
     RMSE_train            = accuracy_glm_train["RMSE"],
     RMSE_true_train       = accuracy_glm_train["RMSE_true"],
     Spearman_train        = accuracy_glm_train["Spearman"],
-    R2_train              = accuracy_glm_train["R2"],       # [CLAUDE FIX 4]
-    Neg_preds             = sum(preds_glm <= 0),            # [CLAUDE FIX 5] always 0 for a Poisson GLM, needed so rbind() columns match
-    Predictor             = predictors,                     # [CLAUDE FIX 16]
-    Effect_size           = glm_effect,                     # [CLAUDE FIX 16]
-    SE                    = glm_SE,                         # [CLAUDE FIX 16]
-    p_value               = glm_p,                          # [CLAUDE FIX 16]
+    R2_train              = accuracy_glm_train["R2"],     
+    Neg_preds             = sum(preds_glm <= 0),            
+    Predictor             = predictors,                     
+    Effect_size           = glm_effect,                     
+    SE                    = glm_SE,                         
+    p_value               = glm_p,                    
     Failed       = FALSE,
     Fail_message = NA_character_,
     row.names = NULL
   )
-  
   
   #### DNN
   iter_rows <- vector("list", length(losses))
@@ -172,7 +145,7 @@ run_one_iteration <- function(i) {
       SE_temp      <- sm$ACE[, 2] |> as.numeric()
       p_value_temp <- sm$ACE[, 4] |> as.numeric()
       
-      row_l <- data.frame(                       # <- this creates row_l
+      row_l <- data.frame(                     
         Iteration       = i,
         Loss_function   = toupper(losses[l]),
         Predictor       = predictors,
@@ -193,7 +166,7 @@ run_one_iteration <- function(i) {
         row.names = NULL
       )
       
-      list(row = row_l, failed = FALSE)          # <- and this hands it back
+      list(row = row_l, failed = FALSE)       
       
     }, error = function(e) {
       list(row = data.frame(
@@ -212,15 +185,12 @@ run_one_iteration <- function(i) {
   }
   
   results_i <- merge(rbind(glm_row, do.call(rbind, iter_rows)), ame_reference[, c("Predictor","AME_true")], by = "Predictor")
-  return(results_i)   # [CLAUDE FIX 8] explicit return
+  return(results_i)
 }
 
 # -----------------------------------------------------------------------------------------------------------------------------------------------------------#
-# [CLAUDE FIX 1] pbmclapply = drop-in replacement for mclapply with progress bar + ETA
 results_list <- pbmclapply(1:iter, run_one_iteration, mc.cores = n_cores, mc.set.seed = TRUE, mc.style = "ETA")
 
-# Check for worker failures before combining - a failed fork returns a try-error object
-# [CLAUDE FIX 9] also catch NULL (a worker killed e.g. by running out of memory returns NULL, which rbind would drop silently)
 failed <- vapply(results_list, function(x) is.null(x) || inherits(x, "try-error"), logical(1))
 if (any(failed)) {
   warning(sprintf("%d of %d iterations failed - inspect results_list[failed] for error messages",
@@ -229,7 +199,7 @@ if (any(failed)) {
 
 metrics <- do.call(rbind, results_list[!failed])
 #------------------------------------------------------------------------------------------------------------------------------------------------------------#
-if (interactive()) View(metrics)   # [CLAUDE FIX 10] View() errors when the script runs non-interactively (e.g. Rscript)
+if (interactive()) View(metrics)  
 
 write.csv(metrics, file = "code/gaussian_data.csv", row.names = FALSE)
 #metrics <- read.csv(file = "code/gaussian_data.csv")
@@ -245,12 +215,6 @@ loss_colors <- c(
   GLM      = "grey60"     # reference model
 )
 
-#### Coverage / bias table
-# [CLAUDE FIX 18] performance measures following Morris, White & Crowther (2019), Statistics in Medicine 38(11).
-# Each estimate is compared to ITS OWN iteration's AME_true (AME_true changes with mean(train$true_mu) every iteration).
-#   coverage      = share of iterations where estimate +- 1.96*SE contains AME_true (should be ~0.95 if SEs are honest)
-#   coverage_MCSE = Monte Carlo SE of coverage -> with 100 iterations ~0.02, so e.g. 0.93 vs 0.95 is NOT a meaningful difference
-#   bias          = mean(estimate - truth); bias_MCSE = its Monte Carlo SE
 coverage_table <- metrics |>
   mutate(error   = Effect_size - AME_true,
          covered = abs(error) <= qnorm(0.975) * SE) |>
@@ -267,17 +231,14 @@ write.csv(coverage_table, file = "code/gaussian_coverage.csv", row.names = FALSE
 
 
 ####Accuracy metrics
-# [CLAUDE FIX 20] GLM is a normal grey bar again, placed last in each group.
-# The reference SEGMENTS (geom_segment + their labels) are gone; AME_true is now a plain number.
-loss_levels <- c("MSE", "MAE", "POISSON", "GAUSSIAN", "NBINOM", "GLM")   # order on the x axis; GLM last = farthest right
+loss_levels <- c("MSE", "MAE", "POISSON", "GAUSSIAN", "NBINOM", "GLM")   
 metric_levels <- c("R2", "RMSE", "Spearman")
 dodge_w <- 0.8
 
-# x offset of the LAST bar in a dodged group, used to put the "True:" label next to the GLM bar
 glm_offset <- -dodge_w / 2 + (length(loss_levels) - 0.5) * (dodge_w / length(loss_levels))
 
 Accuracy_long <- metrics |>
-  distinct(Iteration, Loss_function, .keep_all = TRUE) |>   # one accuracy row per model per iteration, not 3 predictor duplicates
+  distinct(Iteration, Loss_function, .keep_all = TRUE) |>  
   group_by(Loss_function) |>
   summarise(RMSE     = mean(RMSE, na.rm = TRUE),
             Spearman = mean(Spearman, na.rm = TRUE),
@@ -305,16 +266,15 @@ ggsave("images/gaussian_accuracy.png", plot = accuracy_plot, device = "png", wid
 Effects <- metrics |>
   group_by(Loss_function, Predictor) |>
   summarise(Effect   = mean(Effect_size, na.rm = TRUE),
-            SE       = mean(SE, na.rm = TRUE),   # average bootstrap SE per fit (calibration is in coverage_table, FIX 18)
+            SE       = mean(SE, na.rm = TRUE),  
             .groups  = "drop") |>
   mutate(Loss_function = factor(Loss_function, levels = loss_levels))
 
-# [CLAUDE FIX 20] true AME as a NUMBER placed next to the GLM bar, no horizontal line
 predictor_xpos <- c(Environment1 = 1, Environment2 = 2, Environment3 = 3)
 ame_labels <- metrics |>
   group_by(Predictor) |>
   summarise(AME_true = mean(AME_true, na.rm = TRUE), .groups = "drop") |>
-  mutate(x = predictor_xpos[Predictor] + glm_offset + 0.09)   # just right of the GLM bar
+  mutate(x = predictor_xpos[Predictor] + glm_offset + 0.09) 
 
 effects_plot <- ggplot(Effects, aes(x = Predictor, y = Effect, fill = Loss_function)) +
   geom_col(position = position_dodge(width = dodge_w), width = 0.7,
@@ -337,7 +297,7 @@ ggsave("images/gaussian_effects.pdf", plot = effects_plot, device = "png",
 
 #Training Accuracy (did the models converge?) -> appendix
 metrics_long <- metrics |>
-  distinct(Iteration, Loss_function, .keep_all = TRUE) |>   # [CLAUDE FIX 14] one accuracy row per model, not 3 duplicates
+  distinct(Iteration, Loss_function, .keep_all = TRUE) |> 
   pivot_longer(
     cols = c(RMSE, RMSE_train, Spearman, Spearman_train, R2, R2_train),
     names_to = "metric_raw",
@@ -353,7 +313,7 @@ overfit_check <- ggplot(metrics_long, aes(x = Loss_function, y = value, fill = s
   facet_wrap(~metric, scales = "free_y") +
   theme_minimal()
 
-ggsave("images/overfit_gaussian.pdf", plot = overfit_check, device = "pdf", width = 9, height = 5)   # [CLAUDE FIX 13]
+ggsave("images/overfit_gaussian.pdf", plot = overfit_check, device = "pdf", width = 9, height = 5)
 ggsave("images/overfit_gaussian.png", plot = overfit_check, device = "png",
        width = 9, height = 5, dpi = 600, bg = "white")
 
