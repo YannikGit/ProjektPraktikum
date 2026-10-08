@@ -302,7 +302,7 @@ effects_plot <- ggplot(Effects, aes(x = Predictor, y = Effect, fill = Loss_funct
   theme_minimal() +
   labs(title = "Effect of environment", x = "Predictor", y = "Effect size", fill = "Loss function")
 ggsave("images/gaussian_effects_beta6.pdf", plot = effects_plot, device = "pdf", width = 9, height = 5)
-ggsave("images/gaussian_effects_beta6.png", plot = accuracy_plot, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
+ggsave("images/gaussian_effects_beta6.png", plot = effects_plot, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
 
 #Training Accuracy (did the models converge?) -> appendix
 metrics_long <- metrics |>
@@ -323,7 +323,7 @@ overfit_check <- ggplot(metrics_long, aes(x = Loss_function, y = value, fill = s
   theme_minimal()
 
 ggsave("images/gaussian_overfit_beta6.pdf", plot = overfit_check, device = "pdf", width = 9, height = 5)  
-ggsave("images/gaussian_overfit_beta6.png", plot = accuracy_plot, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
+ggsave("images/gaussian_overfit_beta6.png", plot = overfit_check, device = "png", width = 9, height = 5, dpi = 600, bg = "white")
 
 #gaussian specifically: Check how many times gaussian and nbinom failed!
 metrics |>

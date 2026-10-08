@@ -16,7 +16,7 @@ library(grid)
 RNGkind("L'Ecuyer-CMRG")
 set.seed(42)
 
-iter    <- 1000
+iter    <- 100
 n_cores <- 12
 n_boot  <- 20 
 
@@ -114,7 +114,7 @@ run_one_iteration <- function(i) {
                    hidden     = c(50L, 50L),
                    activation = "relu",
                    loss       = losses[l],
-                   optimizer  = config_optimizer("ignite_adam", weight_decay = 0.01), # l2
+                   optimizer  = config_optimizer("ignite_adam"), weight_decay = 0.01)# l2
                    epochs     = 200,
                    lr         = 0.003,
                    validation = 0.2,        
