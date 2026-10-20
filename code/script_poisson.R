@@ -214,7 +214,7 @@ coverage_table <- metrics |>
             .groups       = "drop")
 
 if (interactive()) View(coverage_table)
-write.csv(coverage_table, file = "code/poisson_coverage.csv", row.names = FALSE)
+write.csv(coverage_table, file = "code/poisson_noTuning_coverage.csv", row.names = FALSE)
 
 cov_fmt <- coverage_table |>
   mutate(
@@ -225,7 +225,7 @@ cov_fmt <- coverage_table |>
   arrange(Predictor, Loss_function) |>
   select(`Loss function` = Loss_function, Predictor, Coverage, Bias)
 
-png("images/poisson_coverage_table.png", width = 1000, height = 900, res = 150)
+png("images/poisson_noTuning_coverage_table.png", width = 1000, height = 900, res = 150)
 grid.table(cov_fmt, rows = NULL)
 dev.off()
 
