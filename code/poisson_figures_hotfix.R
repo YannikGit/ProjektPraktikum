@@ -23,7 +23,7 @@ library(dplyr)
 ## Config
 ## ---------------------------------------------------------------------------
 
-scenario <- "poisson"          # "poisson" or "gaussian"
+scenario <- "gaussian"          # "poisson" or "gaussian"
 
 cfg <- switch(scenario,
               poisson  = list(file = "code/poisson_data.csv",
@@ -398,6 +398,12 @@ coverage_table <- metrics |>
             bias          = mean(error, na.rm = TRUE),
             bias_MCSE     = sd(error, na.rm = TRUE) / sqrt(n),
             .groups       = "drop")
-
-if (interactive()) View(coverage_table)
-write.csv(coverage_table, file = "code/poisson_noTuning_coverage.csv", row.names = FALSE)
+cov_fmt <- coverage_table |>
+  mutate(
+    Loss_function = factor(Loss_function, levels = loss_levels),
+    Coverage = sprintf("%.3f (%.3f)", coverage, coverage_MCSE),
+    Bias     = sprintf("%+.3f (%.3f)", bias, bias_MCSE)
+  ) |>
+  arrange(Predictor, Loss_function) |>
+  select(`Loss function` = Loss_function, Predictor, Coverage, Bias)
+save_table_png(cov_fmt, "images/poisson_coverage_table.png")
