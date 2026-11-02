@@ -23,7 +23,7 @@ library(dplyr)
 ## Config
 ## ---------------------------------------------------------------------------
 
-scenario <- "gaussian"          # "poisson" or "gaussian"
+scenario <- "poisson"          # "poisson" or "gaussian"
 
 cfg <- switch(scenario,
               poisson  = list(file = "code/poisson_data.csv",
@@ -384,3 +384,20 @@ effects_plot <- ggplot(Effects, aes(x = Predictor, y = Effect, fill = Loss_funct
 
 ggsave(sprintf("images/%s_effects_bars.png", cfg$tag), effects_plot,
        width = 9, height = 5, dpi = 600, bg = "white")
+
+
+
+
+coverage_table <- metrics |>
+  mutate(error   = Effect_size - AME_true,
+         covered = abs(error) <= qnorm(0.975) * SE) |>
+  group_by(Loss_function, Predictor) |>
+  summarise(n             = sum(!is.na(covered)),
+            coverage      = mean(covered, na.rm = TRUE),
+            coverage_MCSE = sqrt(coverage * (1 - coverage) / n),
+            bias          = mean(error, na.rm = TRUE),
+            bias_MCSE     = sd(error, na.rm = TRUE) / sqrt(n),
+            .groups       = "drop")
+
+if (interactive()) View(coverage_table)
+write.csv(coverage_table, file = "code/poisson_noTuning_coverage.csv", row.names = FALSE)
